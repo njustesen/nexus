@@ -66,39 +66,31 @@ class GameServer:
     async def handle_command(self, player: Player, cmd: Command):
         """Handle incoming commands from players"""
         print(f"[Server] Handling command {cmd.command_type} from player {player.name}")
-        
+
         if cmd.command_type == "create_game":
             print(f"[Server] Creating game: {cmd.data}")
             await self.create_game(player, cmd.data["name"], cmd.data.get("password"), 
                                  cmd.data.get("max_players", 2))
             player.name = cmd.data.get("player_name", "")
-        
-        elif cmd.command_type == "join_game":
+        elif cmd.command_type == "find_game":
+                print(f"[Server] Finding game for player: {cmd.data}")
+                player.name = cmd.data.get("player_name", "")
+                await self.find_game(player)
+        if cmd.command_type == "join_game":
             print(f"[Server] Joining game: {cmd.data}")
             await self.join_game(player, cmd.data["name"], cmd.data.get("password"))
             player.name = cmd.data.get("player_name", "")
-        
-        elif cmd.command_type == "find_game":
-            print(f"[Server] Finding game for player: {cmd.data}")
-            player.name = cmd.data.get("player_name", "")
-            await self.find_game(player)
-        
-        elif cmd.command_type == "surrender":
-            print(f"[Server] Player surrendering: {player.name}")
-            await self.handle_surrender(player)
-        
-        elif cmd.command_type == "make_move":
-            print(f"[Server] Processing move: {cmd.data}")
-            await self.handle_game_command(player, cmd)
-        
-        elif player.game_id and cmd.command_type in [
-            CommandType.MOVE_UP, CommandType.MOVE_DOWN, 
-            CommandType.MOVE_LEFT, CommandType.MOVE_RIGHT,
-            CommandType.SHOOT, CommandType.USE_ITEM,
-            CommandType.DROP_ITEM, CommandType.PICK_UP_ITEM,
-            CommandType.MAKE_MOVE  # Add make_move to valid commands
-        ]:
-            await self.handle_game_command(player, cmd)
+        else:
+            game = self.games.get(player.game_id, None)
+            if game is None:
+                print(f"[Server] Game not found for player {player.name}")
+            else:
+                if cmd.command_type == CommandType.SURRENDER:
+                    print(f"[Server] Player surrendering: {player.name}")
+                    await self.handle_surrender(game, player)
+                elif cmd.command_type == CommandType.MAKE_MOVE:
+                    print(f"[Server] Processing move: {cmd.data}")
+                    await self.handle_game_command(game, player, cmd)
 
     async def create_game(self, player: Player, name: str, password: Optional[str] = None, max_players: int = 2):
         """Create a new game"""
@@ -197,10 +189,9 @@ class GameServer:
                     "board": [['' for _ in range(3)] for _ in range(3)]
                 }, specific_player=p)
 
-    async def handle_game_command(self, player: Player, cmd: Command):
+    async def handle_game_command(self, game: Game, player: Player, cmd: Command):
         """Handle a game-specific command"""
-        game = self.games.get(player.game_id)
-        if not game or game.game_state.phase != GamePhase.IN_GAME:
+        if game.game_state.phase != GamePhase.IN_GAME:
             print(f"[Server] Invalid game command: game not found or not in progress")
             return
 
@@ -252,12 +243,11 @@ class GameServer:
             return board[0][2]
         return None
 
-    async def handle_surrender(self, player: Player):
+    async def handle_surrender(self, game: Game, player: Player):
         """Handle a player surrendering"""
         if not player.game_id:
             return
             
-        game = self.games[player.game_id]
         game.game_state.phase = GamePhase.END_GAME
         print(f"[Server] Player {player.name} surrendered in game {game.name}")
         
