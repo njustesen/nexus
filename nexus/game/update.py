@@ -1,4 +1,4 @@
-from message import NetworkMessage
+from nexus.network.message import NetworkMessage
 
 class UpdateType:
     PLAYER_UPDATE = "player_update"
@@ -8,8 +8,7 @@ class UpdateType:
     GAME_STATE_UPDATE = "game_state_update"
 
 
-
-class GameUpdate(NetworkMessage):
+class Update(NetworkMessage):
 
     def __init__(self, update_type: UpdateType, data: dict) -> None:
         self.update_type = update_type

@@ -1,13 +1,12 @@
 import pygame
-import sys
-import json
 import argparse
 from typing import Optional, List, Tuple
-from client import WebSocketClient
-from game import NetworkGame
-from game_state import GameState, GamePhase
-from game_update import GameUpdate, UpdateType
-from command import Command, CommandType
+from nexus.network.client import WebSocketClient
+from nexus.game.game import NetworkGame
+from nexus.game.gamestate import GameState, GamePhase
+from nexus.game.update import Update, UpdateType
+from nexus.game.command import Command, CommandType
+
 
 class TicTacToeState(GameState):
     def __init__(self):
@@ -18,7 +17,7 @@ class TicTacToeState(GameState):
         self.my_symbol = None
         print("[Client] TicTacToe state initialized")
 
-    def update(self, update: GameUpdate):
+    def update(self, update: Update):
         print(f"[Client] Received game update: {update.data}")
         if update.update_type == UpdateType.GAME_STATE_UPDATE:
             if "board" in update.data:

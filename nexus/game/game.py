@@ -1,8 +1,8 @@
 import pygame
-from client import WebSocketClient
+from nexus.network.client import WebSocketClient
 import sys
-from game_state import GameState
-from command import Command
+from nexus.game.gamestate import GameState
+from nexus.game.command import Command
 from typing import List
 
 

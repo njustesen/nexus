@@ -1,8 +1,8 @@
 import websocket
 import json
 import threading
-from command import Command
-from game_update import GameUpdate
+from nexus.game.command import Command
+from nexus.game.update import Update
 
 class WebSocketClient:
     def __init__(self, host, port) -> None:
@@ -57,7 +57,7 @@ class WebSocketClient:
         print(f"[WebSocketClient] Sending command: {message}")
         self.ws.send(message)
 
-    def receive(self) -> GameUpdate:
+    def receive(self) -> Update:
         if not hasattr(self, 'last_message'):
             return None
         
@@ -69,7 +69,7 @@ class WebSocketClient:
             if "type" in data and data["type"] == "error":
                 print(f"[WebSocketClient] Received error: {data['message']}")
                 return None
-            return GameUpdate(**data)
+            return Update(**data)
         except json.JSONDecodeError:
             print(f"[WebSocketClient] Error decoding message: {message}")
             return None

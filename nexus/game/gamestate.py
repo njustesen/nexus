@@ -1,4 +1,4 @@
-from game_update import GameUpdate
+from nexus.game.update import Update
 
 
 class GameState:
@@ -7,7 +7,7 @@ class GameState:
         self.phase = GamePhase.LOBBY
         self.board = [['' for _ in range(3)] for _ in range(3)]  # Initialize empty board
 
-    def update(self, update: GameUpdate):
+    def update(self, update: Update):
         raise NotImplementedError("Subclasses must implement this method")
 
 

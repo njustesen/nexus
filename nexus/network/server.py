@@ -3,9 +3,9 @@ import websockets
 import json
 from typing import Dict, List, Optional
 from dataclasses import dataclass
-from game_state import GameState, GamePhase
-from game_update import GameUpdate, UpdateType
-from command import Command, CommandType
+from nexus.game.gamestate import GameState, GamePhase
+from nexus.game.update import Update, UpdateType
+from nexus.game.command import Command, CommandType
 
 
 @dataclass
@@ -23,7 +23,7 @@ class Game:
     game_state: GameState
     is_matchmaking: bool = False
 
-class WebSocketGameServer:
+class GameServer:
     def __init__(self, host: str = "localhost", port: int = 8765):
         self.host = host
         self.port = port
@@ -302,7 +302,7 @@ class WebSocketGameServer:
 
     async def send_game_update(self, game: Game, update_type: str, data: dict, specific_player: Player = None):
         """Send a game update to all players in a game"""
-        update = GameUpdate(update_type, data)
+        update = Update(update_type, data)
         message = json.dumps(update, default=lambda o: o.__dict__)
         
         if specific_player:
@@ -323,7 +323,7 @@ class WebSocketGameServer:
         }))
 
 if __name__ == "__main__":
-    server = WebSocketGameServer()
+    server = GameServer()
     asyncio.run(server.start())
 
     

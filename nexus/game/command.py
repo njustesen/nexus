@@ -1,4 +1,4 @@
-from message import NetworkMessage
+from nexus.network.message import NetworkMessage
 
 
 class CommandType:
