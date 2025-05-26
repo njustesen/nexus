@@ -1,6 +1,10 @@
 from enum import Enum
-from typing import Any, Dict
-from nexus.game.update import Update
+from typing import Any, Dict, Tuple, List, ClassVar, Optional
+from dataclasses import dataclass, field
+from nexus.network.update import Update
+from nexus.network.command import Command
+from nexus.network.player import NexusPlayer
+from nexus.network.serializable import Serializable
 
 
 class GamePhase(str, Enum):
@@ -9,31 +13,26 @@ class GamePhase(str, Enum):
     END_GAME = "end_game"
 
 
-class GameState:
+@dataclass
+class GameState(Serializable):
+    """Base class for game states"""
+    players: List[NexusPlayer] = field(default_factory=list)
+    game_over: bool = False
+    winner: Optional[str] = None
+    phase: GamePhase = GamePhase.IN_GAME
 
-    def __init__(self) -> None:
-        self.phase: GamePhase = GamePhase.LOBBY
-        self.board = [['' for _ in range(3)] for _ in range(3)]  # Initialize empty board
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert the game state to a dictionary for serialization"""
+    def get_player_perspective(self, player_index: int) -> Dict[str, Any]:
+        """Get the game state from a specific player's perspective"""
         return {
+            "game_over": self.game_over,
+            "winner": self.winner,
             "phase": self.phase
         }
 
-    def get_player_perspective(self, player_index: int) -> Dict[str, Any]:
-        """
-        Get the game state from a specific player's perspective.
-        This base implementation just returns the basic state.
-        Game-specific implementations should override this to add their own state.
-        """
-        return self.to_dict()
+    def is_valid(self, cmd: Command, player_index: int) -> Tuple[bool, str]:
+        """Validate if a command is valid for the current game state"""
+        raise NotImplementedError("Subclasses must implement this method")
 
-    def update(self, data: Dict[str, Any]) -> None:
-        """
-        Update the game state with new data.
-        This base implementation only updates the phase.
-        Game-specific implementations should override this to handle their own state.
-        """
-        if "phase" in data:
-            self.phase = GamePhase(data["phase"])
+    def apply(self, update: Update) -> None:
+        """Apply an update to the game state"""
+        raise NotImplementedError("Subclasses must implement this method")

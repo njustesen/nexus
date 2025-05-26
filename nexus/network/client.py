@@ -1,34 +1,37 @@
 import websocket
 import json
 import threading
-from nexus.game.command import Command
-from nexus.game.update import Update
+from queue import Queue
+from nexus.network.command import Command
+from nexus.network.update import Update
 
-class WebSocketClient:
+class NexusClient:
+    """Base client class for the Nexus framework"""
     def __init__(self, host, port) -> None:
         self.host = host
         self.port = port
         self.ws = None
         self.connected = False
-        print(f"[WebSocketClient] Initialized for {host}:{port}")
+        self.message_queue = Queue()
+        print(f"[NexusClient] Initialized for {host}:{port}")
 
     def on_message(self, ws, message):
-        print(f"[WebSocketClient] Received message: {message}")
-        self.last_message = message
+        print(f"[NexusClient] Received message: {message}")
+        self.message_queue.put(message)
 
     def on_error(self, ws, error):
-        print(f"[WebSocketClient] Error: {error}")
+        print(f"[NexusClient] Error: {error}")
 
     def on_close(self, ws, close_status_code, close_msg):
-        print("[WebSocketClient] Connection closed")
+        print("[NexusClient] Connection closed")
         self.connected = False
 
     def on_open(self, ws):
-        print("[WebSocketClient] Connection opened")
+        print("[NexusClient] Connection opened")
         self.connected = True
 
     def connect(self):
-        print("[WebSocketClient] Connecting...")
+        print("[NexusClient] Connecting...")
         websocket.enableTrace(True)
         self.ws = websocket.WebSocketApp(
             f"ws://{self.host}:{self.port}",
@@ -46,39 +49,37 @@ class WebSocketClient:
         # Wait for connection to be established
         while not self.connected:
             pass
-        print("[WebSocketClient] Connected successfully")
+        print("[NexusClient] Connected successfully")
 
     def send(self, cmd: Command):
         if not self.connected:
-            print("[WebSocketClient] Error: Not connected")
+            print("[NexusClient] Error: Not connected")
             return
         
         message = cmd.to_json()
-        print(f"[WebSocketClient] Sending command: {message}")
+        print(f"[NexusClient] Sending command: {message}")
         self.ws.send(message)
 
     def receive(self) -> Update:
-        if not hasattr(self, 'last_message'):
+        if self.message_queue.empty():
             return None
-        
-        message = self.last_message
-        delattr(self, 'last_message')
-        
+            
         try:
+            message = self.message_queue.get_nowait()
             data = json.loads(message)
             if "type" in data and data["type"] == "error":
-                print(f"[WebSocketClient] Received error: {data['message']}")
+                print(f"[NexusClient] Received error: {data['message']}")
                 return None
             return Update(**data)
         except json.JSONDecodeError:
-            print(f"[WebSocketClient] Error decoding message: {message}")
+            print(f"[NexusClient] Error decoding message: {message}")
             return None
         except Exception as e:
-            print(f"[WebSocketClient] Error processing message: {str(e)}")
+            print(f"[NexusClient] Error processing message: {str(e)}")
             return None
 
     def close(self):
-        print("[WebSocketClient] Closing connection")
+        print("[NexusClient] Closing connection")
         if self.ws:
             self.ws.close()
             self.ws_thread.join(timeout=1)
