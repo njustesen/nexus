@@ -59,7 +59,7 @@ class TicTacToeState(GameState):
         """Apply an update to the game state"""
         if update.update_type == UpdateType.GAME_STATE_UPDATE:
             if "row" in update.data and "col" in update.data:
-                # First apply the move
+                # Apply the move
                 row, col = update.data["row"], update.data["col"]
                 symbol = update.data["symbol"]
                 print(f"[TicTacToeState] Applying move: row={row}, col={col}, symbol={symbol}")
@@ -141,6 +141,9 @@ class TicTacToeGame(NexusGame[TicTacToeState]):
         # Center the board
         self.board_x = (self.screen.get_width() - self.BOARD_SIZE) // 2
         self.board_y = (self.screen.get_height() - self.BOARD_SIZE) // 2
+
+        # Track disconnected players separately from game state
+        self.disconnected_players: List[str] = []
         print("[Client] Game window initialized")
 
     def update(self, events: List[pygame.event.EventType]):
@@ -148,6 +151,10 @@ class TicTacToeGame(NexusGame[TicTacToeState]):
         for event in events:
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 print("[Client] Mouse click detected")
+                # Don't allow moves if any player is disconnected
+                if self.disconnected_players:
+                    print("[Client] Ignoring click - player disconnected")
+                    return
                 if self.game_state.phase == GamePhase.IN_GAME and \
                    self.game_state.my_symbol == self.game_state.current_player:
                     print("[Client] Processing mouse click - it's our turn")
@@ -156,7 +163,23 @@ class TicTacToeGame(NexusGame[TicTacToeState]):
                     print(f"[Client] Ignoring click - phase: {self.game_state.phase}, " + \
                           f"my_symbol: {self.game_state.my_symbol}, " + \
                           f"current_player: {self.game_state.current_player}")
-                    print(f"[Client] Game state: {self.game_state}")
+
+    def process_update(self, update: Update):
+        """Override process_update to handle connection state updates"""
+        if update.update_type == UpdateType.GAME_STATE_UPDATE:
+            if "disconnected_player" in update.data:
+                player_name = update.data["disconnected_player"]
+                if player_name not in self.disconnected_players:
+                    self.disconnected_players.append(player_name)
+                return
+            elif "reconnected_player" in update.data:
+                player_name = update.data["reconnected_player"]
+                if player_name in self.disconnected_players:
+                    self.disconnected_players.remove(player_name)
+                return
+        
+        # For all other updates, use default processing
+        super().process_update(update)
 
     def handle_click(self, pos: Tuple[int, int]):
         # Convert screen coordinates to board coordinates
@@ -223,7 +246,10 @@ class TicTacToeGame(NexusGame[TicTacToeState]):
             # Draw game status
             status_text = ""
             if self.game_state.phase == GamePhase.IN_GAME:
-                if self.game_state.my_symbol == self.game_state.current_player:
+                # Show disconnection status if any
+                if self.disconnected_players:
+                    status_text = f"Opponent disconnected: {', '.join(self.disconnected_players)}"
+                elif self.game_state.my_symbol == self.game_state.current_player:
                     status_text = f"Your turn! (You are {self.game_state.my_symbol})"
                 else:
                     status_text = f"Opponent's turn (You are {self.game_state.my_symbol})"

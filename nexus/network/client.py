@@ -2,7 +2,7 @@ import websocket
 import json
 import threading
 from queue import Queue
-from nexus.network.command import Command
+from nexus.network.command import Command, CommandType
 from nexus.network.update import Update
 
 class NexusClient:
@@ -23,8 +23,10 @@ class NexusClient:
         print(f"[NexusClient] Error: {error}")
 
     def on_close(self, ws, close_status_code, close_msg):
-        print("[NexusClient] Connection closed")
+        print(f"[NexusClient] Connection closed (status: {close_status_code}, msg: {close_msg})")
         self.connected = False
+        # Clean up the WebSocket object
+        self.ws = None
 
     def on_open(self, ws):
         print("[NexusClient] Connection opened")
@@ -41,8 +43,15 @@ class NexusClient:
             on_open=self.on_open
         )
         
-        # Run the websocket connection in a separate thread
-        self.ws_thread = threading.Thread(target=self.ws.run_forever)
+        # Run the websocket connection in a separate thread with proper protocol options
+        self.ws_thread = threading.Thread(
+            target=lambda: self.ws.run_forever(
+                # Enable proper close frame handling
+                skip_utf8_validation=True,
+                ping_interval=10,
+                ping_timeout=5
+            )
+        )
         self.ws_thread.daemon = True
         self.ws_thread.start()
         
@@ -80,8 +89,16 @@ class NexusClient:
 
     def close(self):
         print("[NexusClient] Closing connection")
-        if self.ws:
-            self.ws.close()
-            self.ws_thread.join(timeout=1)
-        self.connected = False
+        if self.ws and self.connected:
+            try:
+                # Send disconnect command
+                self.send(Command(CommandType.DISCONNECT, {}))
+                # Close the connection
+                self.ws.close()
+                self.ws_thread.join(timeout=1)
+            except Exception as e:
+                print(f"[NexusClient] Error during close: {str(e)}")
+            finally:
+                self.connected = False
+                self.ws = None
 

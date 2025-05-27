@@ -2,6 +2,7 @@ import asyncio
 import websockets
 import json
 import uuid
+import time
 from typing import Dict, List, Optional
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
@@ -86,11 +87,20 @@ class NexusServer(ABC):
                 except Exception as e:
                     print(f"[Server] Error processing command: {str(e)}")
                     await self.send_error(player, f"Error: {str(e)}")
-        except websockets.exceptions.ConnectionClosed:
-            print(f"[Server] Client disconnected: {websocket.remote_address}")
-            await self.handle_disconnect(player)
+        except (websockets.exceptions.ConnectionClosed, Exception) as e:
+            print(f"[Server] Connection ended: {websocket.remote_address} - {str(e)}")
         finally:
-            self.connections.remove_connection(websocket)
+            # Get the current player and handle disconnect BEFORE removing the connection
+            current_player = self.connections.get_player(websocket)
+            if current_player:
+                print(f"[Server] Found disconnecting player: {current_player.name} with game_id: {current_player.game_id}")
+                # Remove the connection first so other players can't send updates to this socket
+                self.connections.remove_connection(websocket)
+                # Then handle the disconnect logic
+                await self.handle_disconnect(current_player)
+            else:
+                print("[Server] No player found for disconnecting websocket")
+                self.connections.remove_connection(websocket)
 
     async def handle_command(self, player: NexusPlayer, cmd: Command):
         """Handle incoming commands from players"""
@@ -112,6 +122,7 @@ class NexusServer(ABC):
         
         elif cmd.command_type == CommandType.JOIN_GAME:
             print(f"[Server] Joining game: {cmd.data}")
+            
             new_player = NexusPlayer(
                 id=player.id,
                 name=cmd.data.get("player_name", ""),
@@ -156,6 +167,12 @@ class NexusServer(ABC):
             print(f"[Server] Invalid command type: {cmd.command_type}")
             return False
             
+        # Check if enough players are connected
+        connected_players = [p for p in game.players if p.connected]
+        if len(connected_players) < 2:
+            print(f"[Server] Invalid game command: not enough connected players")
+            return False
+            
         return True
 
     async def create_game(self, player: NexusPlayer, name: str, password: Optional[str] = None, max_players: int = 2):
@@ -193,7 +210,38 @@ class NexusServer(ABC):
             await self.send_error(player, "Invalid password")
             return
 
-        if len(game.players) >= game.max_players:
+        # Check if this is a reconnection
+        existing_player = next((p for p in game.players if p.name == player.name), None)
+        if existing_player:
+            if existing_player.connected:
+                print(f"[Server] Join failed: Player {player.name} already in game")
+                await self.send_error(player, "Already in game")
+                return
+            
+            # Reconnection case - update the existing player
+            print(f"[Server] Player {player.name} reconnecting to game {game_name}")
+            existing_player.connected = True
+            existing_player.last_seen = time.time()
+            # Update connection mapping with the reconnected player
+            websocket = self.connections.get_socket(player.id)
+            self.connections.add_connection(websocket, existing_player)
+            
+            # Send current game state to reconnected player
+            state_data = self.get_player_game_state(game, existing_player)
+            update = Update(UpdateType.GAME_STARTED, state_data)
+            await self.send_game_update(game, update, existing_player)
+            
+            # Notify other players
+            update = Update(UpdateType.GAME_STATE_UPDATE, {
+                "reconnected_player": existing_player.name
+            })
+            for p in game.players:
+                if p.id != existing_player.id and p.connected:
+                    await self.send_game_update(game, update, p)
+            return
+
+        # Normal join case
+        if len([p for p in game.players if p.connected]) >= game.max_players:
             print(f"[Server] Join failed: Game {game_name} is full")
             await self.send_error(player, "Game is full")
             return
@@ -202,17 +250,20 @@ class NexusServer(ABC):
         player.game_id = game_name
         print(f"[Server] Player {player.name} joined game {game_name}")
 
-        # If game is now full, start it
-        if len(game.players) == game.max_players:
-            game.game_state = self.create_initial_game_state(game.players)
+        # If game has enough connected players, start it
+        connected_players = [p for p in game.players if p.connected]
+        if len(connected_players) == game.max_players:
+            if not game.game_state:
+                game.game_state = self.create_initial_game_state(game.players)
             game.phase = GamePhase.IN_GAME
-            print(f"[Server] Game {game_name} starting with {len(game.players)} players")
+            print(f"[Server] Game {game_name} starting with {len(connected_players)} players")
 
-        # Send updates to all players
+        # Send updates to all connected players
         for p in game.players:
-            state_data = self.get_player_game_state(game, p)
-            update = Update(UpdateType.GAME_STARTED, state_data)
-            await self.send_game_update(game, update, p)
+            if p.connected:
+                state_data = self.get_player_game_state(game, p)
+                update = Update(UpdateType.GAME_STARTED, state_data)
+                await self.send_game_update(game, update, p)
 
     async def find_game(self, player: NexusPlayer):
         """Add player to matchmaking queue"""
@@ -284,23 +335,25 @@ class NexusServer(ABC):
     async def handle_disconnect(self, player: NexusPlayer):
         """Handle a player disconnecting"""
         print(f"[Server] Player {player.name} disconnected")
+        
+        # Update player status
+        player.connected = False
+        player.last_seen = time.time()
+        
         if player.id in self.matchmaking_queue:
             self.matchmaking_queue.remove(player.id)
             print(f"[Server] Removed {player.name} from matchmaking queue")
             
         if player.game_id:
             game = self.games[player.game_id]
-            game.players.remove(player)
-            print(f"[Server] Removed {player.name} from game {game.name}")
+            # Don't remove the player, just notify others
+            update = Update(UpdateType.GAME_STATE_UPDATE, {
+                "disconnected_player": player.name
+            })
+            for p in game.players:
+                if p.id != player.id and p.connected:
+                    await self.send_game_update(game, update, p)
             
-            if len(game.players) < 2:
-                await self.end_game(game)
-            else:
-                # Send update to remaining players
-                state_data = self.get_player_game_state(game, game.players[0])
-                update = Update(UpdateType.GAME_STATE_UPDATE, state_data)
-                await self.send_game_update(game, update, game.players[0])
-
     async def end_game(self, game: NexusGame):
         """Clean up a finished game"""
         print(f"[Server] Ending game {game.name}")
