@@ -58,7 +58,13 @@ class NexusServer(ABC):
     async def start(self):
         """Start the WebSocket server"""
         print("[Server] Starting server...")
-        async with websockets.serve(self.handle_connection, self.host, self.port):
+        async with websockets.serve(
+            self.handle_connection,
+            self.host,
+            self.port,
+            ping_interval=10,    # Send ping every 10 seconds
+            ping_timeout=30      # Consider connection lost after 30 seconds of no response
+        ):
             print(f"[Server] Listening on ws://{self.host}:{self.port}")
             await asyncio.Future()  # run forever
 

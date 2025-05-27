@@ -226,7 +226,11 @@ class TicTacToeGame(NexusGame[TicTacToeState]):
                 2
             )
         
-        if self.game_state is None:
+        if not self.client.connected:
+            text = self.font.render("Connection to server lost...", True, self.BLACK)
+            text_rect = text.get_rect(center=(self.screen.get_width() // 2, 30))
+            self.screen.blit(text, text_rect)
+        elif self.game_state is None:
             text = self.font.render("Waiting for opponent...", True, self.BLACK)
             text_rect = text.get_rect(center=(self.screen.get_width() // 2, 30))
             self.screen.blit(text, text_rect)
